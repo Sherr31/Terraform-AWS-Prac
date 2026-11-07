@@ -1,90 +1,198 @@
-# Terraform Remote State (AWS)
+<div align="center">
 
-Practice project that provisions AWS resources with Terraform and stores Terraform state remotely in **Amazon S3**, with state locking via **S3 lockfile** (`use_lockfile`).
+# Practice 02 — Terraform State
 
-## What this project creates
+**Remote state on AWS · S3 backend · locking**
 
-| Resource | Name / notes |
-|----------|----------------|
-| EC2 instance | `t3.micro` in `us-east-1` |
-| S3 bucket | `sherry-tf-state-test` (also used as the remote state backend) |
-| DynamoDB table | `terraform-state-lock` (`LockID` partition key; created for classic locking practice) |
+Part of [`Terraform-AWS-Prac`](../README.md)
 
-## Project layout
+[![S3 Backend](https://img.shields.io/badge/Backend-S3-569A31?style=for-the-badge&logo=amazons3&logoColor=white)](#)
+[![Lockfile](https://img.shields.io/badge/Locking-use__lockfile-232F3E?style=for-the-badge)](#)
+[![Region](https://img.shields.io/badge/Region-us--east--1-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white)](#)
+
+</div>
+
+---
+
+## Purpose
+
+This lab teaches **where Terraform state lives** and how teams share it safely.
+
+You will practice:
+
+- Creating resources that later *host* remote state
+- Applying with **local** state first (bootstrap)
+- Migrating state into **S3**
+- Locking with **`use_lockfile`** (modern) while still creating a DynamoDB lock table for learning
+
+> This folder is a sandbox. Experiment here, then push screenshots and notes.
+
+---
+
+## Layout
 
 ```text
 Terraform-state/
-├── mian.tf          # Provider + AWS resources
-├── backend.tf       # S3 remote backend config
-├── pics/            # AWS Console screenshots
+├── mian.tf       ← main practice config (provider + resources)
+├── backend.tf    ← S3 remote backend
+├── pics/         ← AWS Console proof
 └── README.md
 ```
 
-## Backend configuration
+---
 
-Remote state lives in S3:
+## Main file — `mian.tf`
 
-- **Bucket:** `sherry-tf-state-test`
-- **Key:** `sherrytfstate/terraform.tfstate`
-- **Region:** `us-east-1`
-- **Locking:** `use_lockfile = true` (S3-native lock file; preferred over deprecated `dynamodb_table`)
+Heart of this lab. Everything Terraform creates in AWS is declared here.
 
-## Prerequisites
+### Provider
 
-- Terraform installed
-- AWS credentials configured (`aws configure` or env vars)
-- Permission to manage EC2, S3, and DynamoDB in `us-east-1`
+```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+```
 
-## Usage
+### Resources
+
+| Block | AWS | Why it is here |
+|-------|-----|----------------|
+| `aws_instance.terraform_state` | **EC2** `t3.micro` | See compute appear from Terraform |
+| `aws_s3_bucket.s3_bucket` | **S3** `sherry-tf-state-test` | Bucket that will store remote state |
+| `aws_dynamodb_table.aws_dynamodb_table` | **DynamoDB** `terraform-state-lock` | Classic lock table (`LockID`, on-demand) |
+
+```hcl
+resource "aws_instance" "terraform_state" {
+  instance_type = "t3.micro"
+  ami           = "ami-0d97d7f07b25dd693"
+}
+
+resource "aws_s3_bucket" "s3_bucket" {
+  bucket = "sherry-tf-state-test"
+}
+
+resource "aws_dynamodb_table" "aws_dynamodb_table" {
+  name         = "terraform-state-lock"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+}
+```
+
+> **Tip:** S3 names are globally unique. On `BucketAlreadyExists`, rename or `terraform import` a bucket you already own.
+
+---
+
+## Backend — `backend.tf`
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket       = "sherry-tf-state-test"
+    key          = "sherrytfstate/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
+}
+```
+
+| Setting | Meaning |
+|---------|---------|
+| `bucket` | S3 bucket holding state |
+| `key` | Object path for `terraform.tfstate` |
+| `region` | Bucket region |
+| `use_lockfile` | S3-native lock (preferred over deprecated `dynamodb_table`) |
+
+---
+
+## Bootstrap flow
+
+```text
+ ┌──────────────────┐
+ │ Comment backend  │  apply with LOCAL state
+ └────────┬─────────┘
+          ▼
+ ┌──────────────────┐
+ │ Create S3 (+ DDB)│  resources exist in AWS
+ └────────┬─────────┘
+          ▼
+ ┌──────────────────┐
+ │ Enable backend   │  terraform init -migrate-state
+ └────────┬─────────┘
+          ▼
+ ┌──────────────────┐
+ │ State in S3      │  lockfile protects concurrent applies
+ └──────────────────┘
+```
+
+---
+
+## Commands
 
 ```bash
 cd Terraform-state
-
-# First time (or after backend changes): local backend while creating the bucket/table
-# Keep backend.tf commented until the S3 bucket exists, then uncomment and migrate.
 
 terraform init
 terraform plan
 terraform apply
 
-# After the S3 bucket exists and backend.tf is enabled:
+# after enabling backend.tf
 terraform init -migrate-state
-```
 
-Useful commands:
-
-```bash
 terraform state list
-terraform plan
-terraform destroy   # tears down resources when you are done practicing
+terraform destroy    # clean up when practice is done
 ```
 
-> **Note:** Do not commit `terraform.tfstate`, `terraform.tfstate.backup`, or `.terraform/` — they can contain sensitive data.
+**Do not commit** `terraform.tfstate`, `*.tfstate.*`, or `.terraform/`.
 
 ---
 
-## AWS Console screenshots
+## Console proof
 
-### S3 — state bucket list
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="pics/s3-2.png" alt="S3 buckets" />
+      <br /><sub><b>S3</b> — buckets</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="pics/s3-1.png" alt="State file in S3" />
+      <br /><sub><b>S3</b> — <code>terraform.tfstate</code> object</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="pics/Dynomodb.png" alt="DynamoDB table" />
+      <br /><sub><b>DynamoDB</b> — <code>terraform-state-lock</code></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="pics/ec2.png" alt="EC2 instance" />
+      <br /><sub><b>EC2</b> — running instance</sub>
+    </td>
+  </tr>
+</table>
 
-General purpose buckets, including the Terraform state bucket.
+---
 
-![S3 buckets list](pics/s3-2.png)
+## Checklist
 
-### S3 — remote state object
+- [ ] `apply` creates EC2, S3, and DynamoDB from `mian.tf`
+- [ ] Understand why laptop-only state is risky
+- [ ] Migrate local → S3 with `-migrate-state`
+- [ ] See state object in the S3 console
+- [ ] Know `use_lockfile` vs DynamoDB locking
+- [ ] `destroy` so practice does not keep costing money
 
-Terraform state file stored under the `sherrytfstate/` prefix.
+---
 
-![S3 terraform.tfstate object](pics/s3-1.png)
+<div align="center">
 
-### DynamoDB — lock table
+**State sandbox.** Edit → apply → observe → push.
 
-Table `terraform-state-lock` with partition key `LockID` (on-demand capacity).
+↑ [`Back to repo`](../README.md)
 
-![DynamoDB terraform-state-lock table](pics/Dynomodb.png)
-
-### EC2 — instance
-
-Running `t3.micro` instance created by this configuration.
-
-![EC2 running instance](pics/ec2.png)
+</div>
