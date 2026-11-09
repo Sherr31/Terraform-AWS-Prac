@@ -8,7 +8,8 @@ resource "aws_instance" "terraform_state" {
 }
 
 resource "aws_s3_bucket" "s3_bucket" {
-  bucket = "sherry-tf-state-test"
+  bucket        = "sherry-tf-state-test"
+  force_destroy = true
 }
 
 resource "aws_dynamodb_table" "aws_dynamodb_table" {

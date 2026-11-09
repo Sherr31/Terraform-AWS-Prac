@@ -1,3 +1,17 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 *.terraform.lock.hcl
+
+# Local values / secrets
 terraform.tfvars
-.terraform
+*.auto.tfvars
+*.pem
+*.key

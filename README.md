@@ -25,6 +25,7 @@ It is a place to learn in public:
 | Hands-on AWS | Real resources, real console, real mistakes |
 | Terraform fundamentals | Providers, variables, outputs, state |
 | Remote state | S3 backend, migrate, locking |
+| Provisioners | file + remote-exec onto EC2 |
 | Habit | Push each practice so progress is saved |
 
 > Clone it. Break it. Destroy it. Push what you learned.
@@ -45,7 +46,14 @@ Terraform-AWS-Prac/
 ├── Terraform-state/        Practice 02 — remote state (S3 + lock)
 │   ├── mian.tf
 │   ├── backend.tf
-│   ├── pics/               Console screenshots
+│   ├── pics/
+│   └── README.md
+│
+├── Provisioners/           Practice 03 — VPC + provisioners + Flask
+│   ├── main.tf
+│   ├── backend.tf
+│   ├── app.py
+│   ├── pics/
 │   └── README.md
 │
 ├── .gitignore
@@ -56,6 +64,7 @@ Terraform-AWS-Prac/
 |-----|--------|--------|
 | **01** | [`First-Module/`](./First-Module/) | Provider · variables · EC2 · outputs |
 | **02** | [`Terraform-state/`](./Terraform-state/) | Local → S3 state · migrate · lockfile |
+| **03** | [`Provisioners/`](./Provisioners/) | VPC · SG · file/remote-exec · Flask · S3 state |
 
 ---
 
@@ -93,20 +102,7 @@ Details → [`First-Module/README.md`](./First-Module/README.md)
 | `aws_s3_bucket.s3_bucket` | S3 | Bucket that will store state |
 | `aws_dynamodb_table.aws_dynamodb_table` | DynamoDB | Classic lock table (`LockID`) |
 
-### Backend idea
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket       = "sherry-tf-state-test"
-    key          = "sherrytfstate/terraform.tfstate"
-    region       = "us-east-1"
-    use_lockfile = true
-  }
-}
-```
-
-### Bootstrap flow (the lesson)
+### Bootstrap flow
 
 ```text
  1  Comment backend.tf     →  apply with LOCAL state
@@ -125,9 +121,7 @@ terraform destroy   # when the practice session is over
 
 Details → [`Terraform-state/README.md`](./Terraform-state/README.md)
 
----
-
-## Screenshots — Practice 02
+### Screenshots — Practice 02
 
 <table>
   <tr>
@@ -154,11 +148,77 @@ Details → [`Terraform-state/README.md`](./Terraform-state/README.md)
 
 ---
 
+## Practice 03 — Provisioners
+
+**Goal:** build a VPC + EC2 stack, configure it with provisioners, and host a Flask app — with remote state in S3.
+
+### What `main.tf` creates
+
+| Resource | Service | Practice focus |
+|----------|---------|----------------|
+| `aws_s3_bucket.tf_state` | S3 | Remote state bucket |
+| `aws_vpc` + subnet + IGW + routes | VPC | Public network path |
+| `aws_security_group.webSg` | EC2 SG | Ports **80** + **22** |
+| `aws_key_pair.key_pair` | Key pair | SSH for provisioners |
+| `aws_instance.server` | EC2 `t3.micro` | file + remote-exec → Flask |
+
+Locking: **`use_lockfile`** on S3 (no DynamoDB in this lab).
+
+```bash
+cd Provisioners
+# keep backend.tf commented until the bucket exists
+terraform init -reconfigure
+terraform plan
+terraform apply
+# uncomment backend.tf
+terraform init -migrate-state
+```
+
+Details → [`Provisioners/README.md`](./Provisioners/README.md)
+
+### Screenshots — Practice 03
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="Provisioners/pics/s3.png" alt="Remote state in S3" />
+      <br /><sub><b>S3</b> — <code>provisioners/terraform.tfstate</code></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="Provisioners/pics/vpc.png" alt="VPC resource map" />
+      <br /><sub><b>VPC</b> — resource map</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="Provisioners/pics/ec2-instance.png" alt="EC2 instance" />
+      <br /><sub><b>EC2</b> — running instance</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="Provisioners/pics/security-group.png" alt="Security group" />
+      <br /><sub><b>SG</b> — HTTP 80 + SSH 22</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="Provisioners/pics/key-pair.png" alt="Key pair" />
+      <br /><sub><b>Key pair</b> — <code>terraform-demo-sherry</code></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="Provisioners/pics/app.png" alt="Flask app" />
+      <br /><sub><b>Browser</b> — Flask app on EC2</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) installed
 - AWS credentials configured (`aws configure` or env vars)
-- IAM rights for EC2, S3, and DynamoDB in the regions you use
+- IAM rights for EC2, VPC, S3 (and DynamoDB for Practice 02)
+- SSH key at `~/.ssh/id_ed25519` for Practice 03 provisioners
 
 ---
 
@@ -175,16 +235,16 @@ Details → [`Terraform-state/README.md`](./Terraform-state/README.md)
 ## Learning path
 
 ```text
-[1] First-Module     variables · apply · outputs
+[1] First-Module      variables · apply · outputs
         │
         ▼
-[2] Terraform-state  local state → S3 migrate → lock
+[2] Terraform-state   local state → S3 migrate → lock
         │
         ▼
-[3] Push notes + screenshots after each lab
+[3] Provisioners      VPC · SG · file/remote-exec · Flask
         │
         ▼
-[4] Add a new folder for the next topic
+[4] Push notes + screenshots after each lab
 ```
 
 ---
