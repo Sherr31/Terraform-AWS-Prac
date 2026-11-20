@@ -26,6 +26,7 @@ It is a place to learn in public:
 | Terraform fundamentals | Providers, variables, outputs, state |
 | Remote state | S3 backend, migrate, locking |
 | Provisioners | file + remote-exec onto EC2 |
+| Workspaces | Modules · dev/stage/prod · separate state |
 | Habit | Push each practice so progress is saved |
 
 > Clone it. Break it. Destroy it. Push what you learned.
@@ -56,6 +57,12 @@ Terraform-AWS-Prac/
 │   ├── pics/
 │   └── README.md
 │
+├── Workspaces/             Practice 04 — modules + workspaces
+│   ├── main.tf
+│   ├── vars.tf
+│   ├── Modules/ec2/
+│   └── README.md
+│
 ├── .gitignore
 └── README.md               ← you are here
 ```
@@ -65,6 +72,7 @@ Terraform-AWS-Prac/
 | **01** | [`First-Module/`](./First-Module/) | Provider · variables · EC2 · outputs |
 | **02** | [`Terraform-state/`](./Terraform-state/) | Local → S3 state · migrate · lockfile |
 | **03** | [`Provisioners/`](./Provisioners/) | VPC · SG · file/remote-exec · Flask · S3 state |
+| **04** | [`Workspaces/`](./Workspaces/) | Modules · workspaces · per-env sizing |
 
 ---
 
@@ -213,6 +221,55 @@ Details → [`Provisioners/README.md`](./Provisioners/README.md)
 
 ---
 
+## Practice 04 — Workspaces
+
+**Goal:** reuse one EC2 module across `dev` / `stage` / `prod` with separate state per environment.
+
+### Layout
+
+```text
+Workspaces/
+├── main.tf              provider + module "ec2"
+├── vars.tf              ami + instance_type map (dev/stage/prod)
+├── terraform.tfvars     optional value overrides
+└── Modules/ec2/
+    ├── main.tf          aws_instance
+    └── variables.tf     module inputs (declared here, not only in root)
+```
+
+### What this lab teaches
+
+| Concept | How it shows up |
+|---------|-----------------|
+| Module | `Modules/ec2` owns `aws_instance` + its own `variables.tf` |
+| Root call | `module "ec2"` passes `ami` and `instance_type` |
+| Workspaces | `terraform workspace new` / `select` → `dev` · `stage` · `prod` |
+| Per-env size | `lookup(var.instance_type, terraform.workspace, "t3.small")` |
+| Separate state | each workspace has its own state under `terraform.tfstate.d/` |
+
+### Commands
+
+```bash
+cd Workspaces
+terraform init
+
+terraform workspace new dev      # once per env
+terraform workspace new stage
+terraform workspace new prod
+
+terraform workspace select dev
+terraform plan && terraform apply
+
+# destroy only affects the CURRENT workspace — repeat per env
+terraform workspace select prod && terraform destroy -auto-approve
+terraform workspace select stage && terraform destroy -auto-approve
+terraform workspace select dev && terraform destroy -auto-approve
+```
+
+**Note:** `terraform.tfvars` assigns values; it does not declare variables. Module inputs must be declared in `Modules/ec2/variables.tf` and passed from the root `module` block.
+
+---
+
 ## Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) installed
@@ -227,7 +284,8 @@ Details → [`Provisioners/README.md`](./Provisioners/README.md)
 | Do | Don't |
 |----|--------|
 | Use tiny resources (`t3.micro`) | Leave labs running overnight |
-| `terraform destroy` when done | Commit `*.tfstate` or `.terraform/` |
+| `terraform destroy` **per workspace** | Assume one destroy cleans all envs |
+| Commit docs + screenshots | Commit `*.tfstate`, `terraform.tfstate.d/`, or `.terraform/` |
 | Rename buckets if create fails | Assume S3 names are free globally |
 
 ---
@@ -238,13 +296,16 @@ Details → [`Provisioners/README.md`](./Provisioners/README.md)
 [1] First-Module      variables · apply · outputs
         │
         ▼
-[2] Terraform-state   local state → S3 migrate → lock
+[2] Terraform-state   local state → S3 migrate · lock
         │
         ▼
 [3] Provisioners      VPC · SG · file/remote-exec · Flask
         │
         ▼
-[4] Push notes + screenshots after each lab
+[4] Workspaces        modules · dev/stage/prod · separate state
+        │
+        ▼
+[5] Push notes + screenshots after each lab
 ```
 
 ---
