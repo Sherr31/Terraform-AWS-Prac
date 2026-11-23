@@ -63,6 +63,13 @@ Terraform-AWS-Prac/
 │   ├── Modules/ec2/
 │   └── README.md
 │
+├── Secrets/               Practice 05 — Vault provider + KV secrets
+│   ├── main.tf
+│   ├── terraform.tfstate
+│   ├── terraform.tfstate.backup
+│   ├── .terraform.lock.hcl
+│   └── .terraform/
+│
 ├── .gitignore
 └── README.md               ← you are here
 ```
@@ -73,6 +80,8 @@ Terraform-AWS-Prac/
 | **02** | [`Terraform-state/`](./Terraform-state/) | Local → S3 state · migrate · lockfile |
 | **03** | [`Provisioners/`](./Provisioners/) | VPC · SG · file/remote-exec · Flask · S3 state |
 | **04** | [`Workspaces/`](./Workspaces/) | Modules · workspaces · per-env sizing |
+| **05** | [`Secrets/`](./Secrets/) | Vault provider · AppRole auth · KV v2 secrets · dynamic tags |
+| **Note** | Secrets folder contains `terraform.tfstate` + Vault credentials — **do not commit** |
 
 ---
 
@@ -270,6 +279,63 @@ terraform workspace select dev && terraform destroy -auto-approve
 
 ---
 
+## Practice 05 — Secrets (Vault + AWS)
+
+**Goal:** integrate Terraform with HashiCorp Vault to manage sensitive data securely — following the **Day-7 Security & Advanced Topics** lab from the Terraform Zero to Hero course.
+
+### What `main.tf` creates
+
+| Resource | Service | Practice focus |
+|----------|---------|----------------|
+| `provider "aws"` | AWS | Region `us-east-1`, EC2 `t3.micro` |
+| `provider "vault"` | Vault | AppRole auth against Vault server |
+| `data "vault_kv_secret_v2"` | Vault KV v2 | Read secret from KV mount |
+| `aws_instance.my_instance` | EC2 | Tag injected from Vault secret |
+
+### Vault setup (from Day-7 course)
+
+The course covers these steps to integrate Terraform with Vault:
+
+1. **Install Vault on EC2** — `sudo apt install vault` after adding the HashiCorp repo
+2. **Start Vault in dev mode** — `vault server -dev -dev-listen-address="0.0.0.0:8200"`
+3. **Enable AppRole auth** — `vault auth enable approle`
+4. **Create a policy** — grant read/list access to secret paths
+5. **Create an AppRole** — `vault write auth/approle/role/terraform ...` with TTLs and policies
+6. **Generate Role ID + Secret ID** — retrieve with `vault read auth/approle/role/<name>/role-id` and `vault write -f auth/approle/role/<name>/secret-id`
+
+### Authentication flow
+
+```text
+1  Vault provider authenticates via AppRole (role_id + secret_id)
+2  data source reads KV v2 secret at the configured mount/path
+3  secret value injected into EC2 tag dynamically
+```
+
+### Providers used
+
+| Provider | Version | Purpose |
+|----------|---------|---------|
+| `hashicorp/aws` | 6.73.0 | Launch EC2 instance |
+| `hashicorp/vault` | 5.13.0 | AppRole auth + KV v2 secret data source |
+
+```bash
+cd Secrets
+terraform init
+terraform plan
+terraform apply
+```
+
+### Secrets management methods (Day-7 overview)
+
+| Method | How it works |
+|--------|--------------|
+| `sensitive = true` | Marks variables/outputs so Terraform hides them from console and state |
+| Secret management system | Store secrets in Vault / AWS Secrets Manager and read them at runtime |
+| Remote backend (encrypted) | S3 or Terraform Cloud with encryption protects state |
+| Environment variables | `TF_VAR_` or `AWS_ACCESS_KEY_ID` style env vars fed into Terraform |
+
+---
+
 ## Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) installed
@@ -305,7 +371,10 @@ terraform workspace select dev && terraform destroy -auto-approve
 [4] Workspaces        modules · dev/stage/prod · separate state
         │
         ▼
-[5] Push notes + screenshots after each lab
+[5] Secrets           Vault provider · AppRole · KV v2 secrets · secure config
+        │
+        ▼
+[6] Push notes + screenshots after each lab
 ```
 
 ---
